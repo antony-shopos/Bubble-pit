@@ -230,7 +230,7 @@ export default function BubblePit() {
     const RADIUS_SMALL = 35;
     const RADIUS_LARGE = 55;
 
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < 40; i++) {
       setTimeout(() => {
         if (!engineRef.current) return;
         const radius = Math.random() > 0.5 ? RADIUS_SMALL : RADIUS_LARGE;
