@@ -82,15 +82,13 @@ export default function BubblePit() {
   const sceneRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Matter.Engine | null>(null);
   const renderRef = useRef<Matter.Render | null>(null);
+  const runnerRef = useRef<Matter.Runner | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [textures, setTextures] = useState<string[]>([]);
+  const [isEngineReady, setIsEngineReady] = useState(false);
+  const initialSpawnedRef = useRef(false);
 
-  useEffect(() => {
-    // Pre-process all images into glassy textures
-    Promise.all(IMAGE_URLS.map(url => createGlassyTexture(url, 200)))
-      .then(setTextures);
-  }, []);
-
+  // 1. Handle Dimensions
   useEffect(() => {
     const updateDimensions = () => {
       if (sceneRef.current) {
@@ -106,10 +104,16 @@ export default function BubblePit() {
     return () => window.removeEventListener('resize', updateDimensions);
   }, []);
 
+  // 2. Pre-process Textures
   useEffect(() => {
-    if (dimensions.width === 0 || dimensions.height === 0 || !sceneRef.current || textures.length === 0) return;
+    Promise.all(IMAGE_URLS.map(url => createGlassyTexture(url, 200)))
+      .then(setTextures);
+  }, []);
 
-    // Initialize Matter.js
+  // 3. Initialize Engine
+  useEffect(() => {
+    if (dimensions.width === 0 || dimensions.height === 0 || !sceneRef.current) return;
+
     const engine = Matter.Engine.create();
     engineRef.current = engine;
 
@@ -125,7 +129,7 @@ export default function BubblePit() {
     });
     renderRef.current = render;
 
-    // Create boundaries
+    // Boundaries
     const ground = Matter.Bodies.rectangle(
       dimensions.width / 2,
       dimensions.height + 50,
@@ -150,29 +154,31 @@ export default function BubblePit() {
 
     Matter.Composite.add(engine.world, [ground, leftWall, rightWall]);
 
-    // Add mouse control
+    // Mouse control
     const mouse = Matter.Mouse.create(render.canvas);
     const mouseConstraint = Matter.MouseConstraint.create(engine, {
       mouse: mouse,
       constraint: {
         stiffness: 0.2,
-        render: {
-          visible: false,
-        },
+        render: { visible: false },
       },
     });
     Matter.Composite.add(engine.world, mouseConstraint);
 
-    // Run the engine and renderer
     const runner = Matter.Runner.create();
+    runnerRef.current = runner;
     Matter.Runner.run(runner, engine);
     Matter.Render.run(render);
 
-    const RADIUS_SMALL = 35;
-    const RADIUS_LARGE = 55;
+    setIsEngineReady(true);
 
-    // Click to spawn 3 bubbles with jumping effect
+    // Click to spawn 3 bubbles
     const handleCanvasClick = (event: MouseEvent) => {
+      if (textures.length === 0) return;
+      
+      const RADIUS_SMALL = 35;
+      const RADIUS_LARGE = 55;
+
       for (let i = 0; i < 3; i++) {
         const radius = Math.random() > 0.5 ? RADIUS_SMALL : RADIUS_LARGE;
         const texture = textures[Math.floor(Math.random() * textures.length)];
@@ -194,7 +200,6 @@ export default function BubblePit() {
           }
         );
 
-        // Jumping effect: random upward and outward velocity
         Matter.Body.setVelocity(bubble, {
           x: (Math.random() - 0.5) * 15,
           y: -Math.random() * 15 - 10
@@ -206,7 +211,25 @@ export default function BubblePit() {
 
     render.canvas.addEventListener('mousedown', handleCanvasClick);
 
-    // Initial limited flow (spawn 15 bubbles at start)
+    return () => {
+      setIsEngineReady(false);
+      initialSpawnedRef.current = false;
+      if (runnerRef.current) Matter.Runner.stop(runnerRef.current);
+      if (renderRef.current) Matter.Render.stop(renderRef.current);
+      Matter.Engine.clear(engine);
+      render.canvas.remove();
+      render.textures = {};
+    };
+  }, [dimensions, textures]);
+
+  // 4. Initial Spawning
+  useEffect(() => {
+    if (!isEngineReady || textures.length === 0 || initialSpawnedRef.current || !engineRef.current) return;
+
+    initialSpawnedRef.current = true;
+    const RADIUS_SMALL = 35;
+    const RADIUS_LARGE = 55;
+
     for (let i = 0; i < 15; i++) {
       setTimeout(() => {
         if (!engineRef.current) return;
@@ -225,25 +248,10 @@ export default function BubblePit() {
             }
           },
         });
-        Matter.Composite.add(engine.world, bubble);
+        Matter.Composite.add(engineRef.current.world, bubble);
       }, i * 150);
     }
-
-    return () => {
-      Matter.Render.stop(render);
-      Matter.Engine.clear(engine);
-      render.canvas.remove();
-      render.textures = {};
-    };
-  }, [dimensions]);
-
-  const handleClear = () => {
-    if (engineRef.current) {
-      const allBodies = Matter.Composite.allBodies(engineRef.current.world);
-      const bubbles = allBodies.filter(b => !b.isStatic);
-      Matter.Composite.remove(engineRef.current.world, bubbles);
-    }
-  };
+  }, [isEngineReady, textures, dimensions.width]);
 
   return (
     <div 
