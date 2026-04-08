@@ -1,17 +1,95 @@
 import React, { useEffect, useRef, useState } from 'react';
 import Matter from 'matter-js';
 
-const COLORS = [
-  '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
-  '#F7DC6F', '#BB8FCE', '#82E0AA', '#F1948A', '#85C1E9',
-  '#F8C471', '#73C6B6', '#D2B4DE', '#FAD7A0', '#AED6F1'
+const IMAGE_URLS = [
+  'https://picsum.photos/seed/nature/200/200',
+  'https://picsum.photos/seed/city/200/200',
+  'https://picsum.photos/seed/tech/200/200',
+  'https://picsum.photos/seed/food/200/200',
+  'https://picsum.photos/seed/abstract/200/200',
+  'https://picsum.photos/seed/animals/200/200',
+  'https://picsum.photos/seed/people/200/200',
+  'https://picsum.photos/seed/travel/200/200',
+  'https://picsum.photos/seed/art/200/200',
+  'https://picsum.photos/seed/space/200/200'
 ];
+
+// Helper to create a circular glassy texture from an image URL
+const createGlassyTexture = (url: string, size: number): Promise<string> => {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.src = url;
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return resolve(url);
+
+      const centerX = size / 2;
+      const centerY = size / 2;
+      const radius = size / 2 - 2;
+
+      // 1. Clip to circle
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.clip();
+
+      // 2. Draw image
+      ctx.drawImage(img, 0, 0, size, size);
+
+      // 3. Add glassy sphere effect (gradient overlay)
+      const gradient = ctx.createRadialGradient(
+        centerX - radius * 0.3,
+        centerY - radius * 0.3,
+        radius * 0.1,
+        centerX,
+        centerY,
+        radius
+      );
+      gradient.addColorStop(0, 'rgba(255, 255, 255, 0.2)');
+      gradient.addColorStop(0.5, 'rgba(255, 255, 255, 0)');
+      gradient.addColorStop(1, 'rgba(0, 0, 0, 0.3)');
+      
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, size, size);
+
+      // 4. Add top highlight (specular)
+      ctx.beginPath();
+      ctx.ellipse(centerX, centerY - radius * 0.6, radius * 0.6, radius * 0.3, 0, 0, Math.PI * 2);
+      const highlight = ctx.createLinearGradient(0, centerY - radius * 0.9, 0, centerY - radius * 0.3);
+      highlight.addColorStop(0, 'rgba(255, 255, 255, 0.4)');
+      highlight.addColorStop(1, 'rgba(255, 255, 255, 0)');
+      ctx.fillStyle = highlight;
+      ctx.fill();
+
+      // 5. Add outer glassy border
+      ctx.restore(); // Reset clip for border
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.lineWidth = 4;
+      ctx.stroke();
+
+      resolve(canvas.toDataURL());
+    };
+    img.onerror = () => resolve(url);
+  });
+};
 
 export default function BubblePit() {
   const sceneRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<Matter.Engine | null>(null);
   const renderRef = useRef<Matter.Render | null>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
+  const [textures, setTextures] = useState<string[]>([]);
+
+  useEffect(() => {
+    // Pre-process all images into glassy textures
+    Promise.all(IMAGE_URLS.map(url => createGlassyTexture(url, 200)))
+      .then(setTextures);
+  }, []);
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -29,7 +107,7 @@ export default function BubblePit() {
   }, []);
 
   useEffect(() => {
-    if (dimensions.width === 0 || dimensions.height === 0 || !sceneRef.current) return;
+    if (dimensions.width === 0 || dimensions.height === 0 || !sceneRef.current || textures.length === 0) return;
 
     // Initialize Matter.js
     const engine = Matter.Engine.create();
@@ -97,7 +175,7 @@ export default function BubblePit() {
     const handleCanvasClick = (event: MouseEvent) => {
       for (let i = 0; i < 3; i++) {
         const radius = Math.random() > 0.5 ? RADIUS_SMALL : RADIUS_LARGE;
-        const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+        const texture = textures[Math.floor(Math.random() * textures.length)];
         
         const bubble = Matter.Bodies.circle(
           event.offsetX + (Math.random() - 0.5) * 20, 
@@ -107,10 +185,12 @@ export default function BubblePit() {
             restitution: 0.8,
             friction: 0.05,
             render: {
-              fillStyle: color,
-              strokeStyle: 'rgba(255, 255, 255, 0.5)',
-              lineWidth: 4,
-            },
+              sprite: {
+                texture: texture,
+                xScale: (radius * 2) / 200,
+                yScale: (radius * 2) / 200,
+              }
+            }
           }
         );
 
@@ -132,15 +212,17 @@ export default function BubblePit() {
         if (!engineRef.current) return;
         const radius = Math.random() > 0.5 ? RADIUS_SMALL : RADIUS_LARGE;
         const x = Math.random() * dimensions.width;
-        const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+        const texture = textures[Math.floor(Math.random() * textures.length)];
 
         const bubble = Matter.Bodies.circle(x, -100, radius, {
           restitution: 0.7,
           friction: 0.05,
           render: {
-            fillStyle: color,
-            strokeStyle: 'rgba(255, 255, 255, 0.4)',
-            lineWidth: 3,
+            sprite: {
+              texture: texture,
+              xScale: (radius * 2) / 200,
+              yScale: (radius * 2) / 200,
+            }
           },
         });
         Matter.Composite.add(engine.world, bubble);
