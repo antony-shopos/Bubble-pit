@@ -1,0 +1,5 @@
+{
+  "name": "Bubble Pit Physics",
+  "description": "A physics-based animation of colorful bubbles filling up a container, inspired by the provided video.",
+  "requestFramePermissions": []
+}
